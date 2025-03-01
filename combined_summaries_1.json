@@ -1,0 +1,60 @@
+{
+    "time_segments": [
+        {
+            "heading": "Time: 0-15 sec",
+            "summary": "Flapag furniture is extremely popular, saves you money and comes with all the basic fittings you need. Here are some handy tips to make sure it all goes like clockwork."
+        },
+        {
+            "heading": "Time: 15-30 sec",
+            "summary": "The man is assembling a structure using a screwdriver and a large cardboard box, following instructions from an instruction manual."
+        },
+        {
+            "heading": "Time: 30-45 sec",
+            "summary": "Putting the right parts in the right place, in the right order. Every step and parts will be clearly numbered. Lay all the parts on a carpet or soft surface to minimize scratches. Once you have checked in case."
+        },
+        {
+            "heading": "Error in processing",
+            "summary": "Could not extract valid JSON from API response. Please check the raw output."
+        },
+        {
+            "heading": "Time: 60-75 sec",
+            "summary": "Man holds book, machinery, and transit boards, with instructions and tasks being performed."
+        },
+        {
+            "heading": "Time: 75-90 sec",
+            "summary": "Equipment found: Four metal straps, each with rotating wheels and silver screws, and a flat head screwdriver embedded in a wooden frame."
+        },
+        {
+            "heading": "Time: 90-105 sec",
+            "summary": "The person is assembling a drawer using a screwdriver and a tape measure, demonstrating the correct method for tightening or loosening screws to hold the wheel in place."
+        },
+        {
+            "heading": "Time: 105-120 sec",
+            "summary": "Lifting and moving a cabinet or shelf, requiring necessary equipment such as a dolly, hand truck, or lifting strap."
+        },
+        {
+            "heading": "Error in processing",
+            "summary": "Could not extract valid JSON from API response. Please check the raw output."
+        },
+        {
+            "heading": "Time: 135-150 sec",
+            "summary": "Preparing to assemble furniture by studying instructions and using tools"
+        },
+        {
+            "heading": "Time: 150-165 sec",
+            "summary": "Adjusting the screw via the slot in the mounting plate and front of back adjustments by slackening the hinge-al mounting screw. When finished, take the supplied hexagonal key and instruct."
+        },
+        {
+            "heading": "Time: 165-180 sec",
+            "summary": "Instructor demonstrates instructional design by providing a complete description of equipment used in an exercise."
+        },
+        {
+            "heading": "Time: 180-195 sec",
+            "summary": "The person is holding two air filters and examining them, with gloves on their hands."
+        },
+        {
+            "heading": "Time: 195-210 sec",
+            "summary": "The video segment demonstrates the use of various tools and equipment for maintenance and repair work on a vehicle's engine."
+        }
+    ]
+}

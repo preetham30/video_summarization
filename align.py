@@ -56,7 +56,7 @@ def assign_image_timestamps(image_summaries, frame_rate=30):
     return image_timestamps
 
 # Align audio and image summaries by time
-def align_summaries(audio_summaries, image_timestamps, chunk_duration=60):
+def align_summaries(audio_summaries, image_timestamps, chunk_duration=15):
     """
     Align audio and image summaries by time.
     

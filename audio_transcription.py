@@ -48,9 +48,6 @@ def process_audio_in_chunks(model, audio_path, chunk_length_ms=60000, output_dir
     audio = AudioSegment.from_file(audio_path)
     total_length = len(audio)
 
-    # Create output directory if it doesn't exist
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
 
     print(f"Total Audio Length: {total_length / 1000:.2f} seconds")
     print(f"Processing in {chunk_length_ms / 1000:.2f}-second chunks...\n")
@@ -77,7 +74,7 @@ def process_audio_in_chunks(model, audio_path, chunk_length_ms=60000, output_dir
             os.remove(temp_file.name)
 
     # Save transcriptions to a JSON file
-    output_file = os.path.join(output_dir, "transcriptions.json")
+    output_file = "transcriptions.json"
     with open(output_file, "w") as f:
         json.dump(transcriptions, f, indent=4)
 
@@ -91,7 +88,7 @@ if __name__ == "__main__":
     model = load_whisper_model(model_size="tiny")  # Options: "tiny", "base", "small", "medium", "large"
     
     # Process and transcribe audio efficiently in chunks and store transcriptions in JSON format
-    transcriptions = process_audio_in_chunks(model, audio_path, chunk_length_ms=60000, output_dir="transcriptions")
+    transcriptions = process_audio_in_chunks(model, audio_path, chunk_length_ms=15000, output_dir="")
     
     print("\nTranscriptions:")
     for entry in transcriptions:

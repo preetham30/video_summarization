@@ -142,7 +142,7 @@ def extract_audio(video_path, output_audio_path):
 
 # Example usage
 if __name__ == "__main__":
-    video_path = "sample_video_3.mp4"  # Input video path
+    video_path = "sample_video_1.mp4"  # Input video path
     output_folder = "extracted_frames"  # Folder for extracted frames
     output_audio_path = "extracted_audio.mp3"  # Path for extracted audio
     

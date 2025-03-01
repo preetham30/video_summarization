@@ -78,14 +78,12 @@ def process_images_in_directory(directory_path):
                 print(f"Error processing {filename}: {e}")
                 results[filename] = {"error": str(e)}
     
-    return results
-
-# Function to save results to a JSON file
-def save_results_to_json(results, output_file):
-    with open(output_file, "w") as json_file:
+    with open( "results.json", "w") as json_file:
         json.dump(results, json_file, indent=4)
-    print(f"Results saved to {output_file}")
+    print(f"Results saved to results.json")
 
+
+ 
 # Main function
 if __name__ == "__main__":
     # Directory containing images
@@ -96,6 +94,8 @@ if __name__ == "__main__":
     
     # Process all images in the directory
     results = process_images_in_directory(image_directory)
+
+    #results = process_videos_in_directory(image_directory)
     
     # Save results to JSON
-    save_results_to_json(results, output_json_file)
+    #save_results_to_json(results, output_json_file)
