@@ -12,12 +12,12 @@ video_files = {
 }
 
 # Initialize OpenAI client
-openai_client = openai.OpenAI(api_key= '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')  # Replace with your OpenAI API key
+openai_client = openai.OpenAI(api_key=  os.getenv("OPENAI_API_KEY"))  # Replace with your OpenAI API key
 
 # Initialize Qdrant client
 qdrant_client = QdrantClient(
     url="https://09932db2-aa96-47f8-a6d1-e2a4870f01ea.eu-central-1-0.aws.cloud.qdrant.io",  # Replace with your Qdrant URL
-    api_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwiZXhwIjoxNzQxMDkyMTQ1fQ.mODU2WVDWl0EmQYFuXNW8cnQN7B1YsH8-tzz5Bx0n88"  # Replace with your Qdrant API key
+    api_key= os.getenv("QDRANT_API_KEY")  # Replace with your Qdrant API key
 )
 
 # Function to read summary from JSON file

@@ -13,8 +13,7 @@ openai_client = openai.OpenAI(api_key=api_key)
 # Initialize Qdrant client (replace with your Qdrant Cloud URL and API key)
 client = QdrantClient(
     url="https://09932db2-aa96-47f8-a6d1-e2a4870f01ea.eu-central-1-0.aws.cloud.qdrant.io",  # e.g., "https://xyz-example.us-east.aws.cloud.qdrant.io:6333"
-    api_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwiZXhwIjoxNzQxMDkyMTQ1fQ.mODU2WVDWl0EmQYFuXNW8cnQN7B1YsH8-tzz5Bx0n88"
-)
+    api_key= os.getenv("QDRANT_API_KEY"))
 
 def generate_embedding(text):
     """
