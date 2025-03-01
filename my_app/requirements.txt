@@ -1,0 +1,5 @@
+gradio==3.36.2
+whisper
+requests
+pydub
+torch  # or a GPU-compatible torch if you have a GPU

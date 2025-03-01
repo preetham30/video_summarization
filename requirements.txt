@@ -1,0 +1,67 @@
+import gradio as gr
+from video_summarizer import process_video_url
+
+def run_pipeline(url, model_size, chunk_sec, fps):
+    url = url.strip()
+    if not url:
+        return "Error: Please enter a remote MP4 URL."
+    if not url.lower().startswith("http") or not url.lower().endswith(".mp4"):
+        return "Error: URL must be an HTTP(S) link ending with .mp4"
+    
+    try:
+        result = process_video_url(
+            url=url,
+            model_size=model_size,
+            chunk_sec=int(chunk_sec),
+            desired_fps=int(fps),
+            do_extract_frames=(int(fps) > 0)
+        )
+        return result
+    except Exception as e:
+        return f"Unexpected error: {e}"
+
+def build_app():
+    with gr.Blocks(title="Qwen2.5-VL + Whisper Summarizer") as demo:
+        gr.Markdown("# Qwen2.5-VL + Whisper Summarizer")
+        gr.Markdown(
+            "Enter a **remote MP4 URL**. The pipeline will:\n"
+            "1. **Send** the URL to Qwen2.5-VL HPC using the exact JSON format.\n"
+            "2. **Download** the video, extract audio, and transcribe with Whisper.\n"
+            "3. **Extract** frame timestamps (if FPS > 0).\n"
+            "4. **Merge** all outputs into a final summary."
+        )
+        url_input = gr.Textbox(
+            label="Remote MP4 URL",
+            value="http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
+            lines=1
+        )
+        with gr.Row():
+            whisper_model = gr.Dropdown(
+                choices=["tiny", "base", "small", "medium", "large"],
+                value="small",
+                label="Whisper Model Size"
+            )
+            chunk_slider = gr.Slider(
+                minimum=15, maximum=300, step=15, value=60,
+                label="Audio Chunk Length (seconds)"
+            )
+            fps_slider = gr.Slider(
+                minimum=0, maximum=30, step=1, value=1,
+                label="Frame Extraction FPS (0 to skip)"
+            )
+        run_button = gr.Button("Process Video", variant="primary")
+        output_box = gr.Textbox(label="Merged Summary", lines=20)
+        
+        run_button.click(fn=run_pipeline,
+                         inputs=[url_input, whisper_model, chunk_slider, fps_slider],
+                         outputs=output_box)
+    
+    return demo
+
+def main():
+    demo = build_app()
+    demo.launch(server_port=7860, server_name="0.0.0.0", share=False)
+
+if __name__ == "__main__":
+    main()
+
