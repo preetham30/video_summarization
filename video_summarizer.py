@@ -4,203 +4,230 @@ import uuid
 import tempfile
 import time
 import cv2
-from tqdm import tqdm
-import whisper
+import numpy as np
+import pyaudio
+import wave
+import threading
+import queue
+import mss
 from moviepy.editor import VideoFileClip
-from pydub import AudioSegment
-import re
 
-# HPC endpoint – adjust as needed.
-QWEN_API_URL = "http://localhost:8001/v1/chat/completions"
+# ------------------------------------------------------------------
+# Qwen Endpoints (do not change these URLs)
+# ------------------------------------------------------------------
+QWEN_VISION_API_URL = "http://localhost:8001/v1/chat/completions"
+QWEN_AUDIO_API_URL = "http://localhost:8011/v1/audio/transcriptions"
 
-def call_qwen_vision(prompt: str, video_url: str) -> str:
-    """Call Qwen2.5-VL HPC with the given prompt and video URL."""
+# =========== Vision Inference ===========
+def call_qwen_vision(prompt: str, file_path: str) -> str:
     payload = {
-        "model": "Qwen/Qwen2.5-VL-7B-Instruct-AWQ",
+        "model": "Qwen/Qwen2.5-VL-7B-Instruct",
         "messages": [
             {
                 "role": "user",
                 "content": [
                     {"type": "text", "text": prompt},
-                    {"type": "video_url", "video_url": {"url": video_url}}
+                    {"type": "video_url", "video_url": {"url": file_path}}
                 ]
             }
         ]
     }
     headers = {"Content-Type": "application/json"}
     try:
-        resp = requests.post(QWEN_API_URL, headers=headers, json=payload, timeout=300)
+        resp = requests.post(QWEN_VISION_API_URL, json=payload, headers=headers, timeout=120)
         if resp.status_code != 200:
-            return f"[Error] HPC error {resp.status_code}: {resp.text}"
+            return f"[Vision Error {resp.status_code}] {resp.text}"
         data = resp.json()
         if "choices" in data and len(data["choices"]) > 0:
-            return data["choices"][0]["message"].get("content", "[Error] No HPC content found")
-        else:
-            return "[Error] No valid HPC data returned."
+            return data["choices"][0]["message"].get("content", "[No vision output]")
+        return "[No vision output]"
     except Exception as e:
-        return f"[Error] HPC connection error: {e}"
+        return f"[Vision Exception] {e}"
 
-def download_mp4(video_url: str) -> str:
-    """Download the MP4 from the provided URL to a temporary file."""
-    if not video_url.lower().startswith("http"):
-        raise ValueError("Video URL must start with http or https.")
-    tmp_path = os.path.join(tempfile.gettempdir(), f"vid_{uuid.uuid4()}.mp4")
-    r = requests.get(video_url, stream=True, timeout=300)
-    r.raise_for_status()
-    with open(tmp_path, "wb") as f:
-        for chunk in r.iter_content(chunk_size=8192):
-            if chunk:
-                f.write(chunk)
-    return tmp_path
-
-def extract_audio_to_mp3(local_mp4: str) -> str:
-    """Extract audio from the local MP4 and save it as an MP3."""
-    mp3_path = os.path.join(tempfile.gettempdir(), f"aud_{uuid.uuid4()}.mp3")
-    clip = VideoFileClip(local_mp4)
-    clip.audio.write_audiofile(mp3_path, fps=44100, logger=None)
-    clip.close()
-    return mp3_path
-
-def transcribe_mp3_whisper(mp3_path: str, model_size: str = "small", chunk_ms: int = 60000) -> str:
-    """Transcribe the MP3 using Whisper (in chunks) and return the transcript with timestamps."""
+# =========== Audio Inference ===========
+def transcribe_mp3_qwen(mp3_path: str, prompt: str = "Transcribe the audio.") -> str:
     try:
-        model = whisper.load_model(model_size)
+        with open(mp3_path, "rb") as f:
+            files = {"file": f}
+            data = {"model": "Qwen/Qwen2-Audio-7B-Instruct", "prompt": prompt}
+            resp = requests.post(QWEN_AUDIO_API_URL, data=data, files=files, timeout=120)
+        if resp.status_code != 200:
+            return f"[Audio Error {resp.status_code}] {resp.text}"
+        result = resp.json()
+        transcription = result.get("transcription", "")
+        if not transcription and "choices" in result:
+            transcription = result["choices"][0]["message"].get("content", "")
+        return transcription
     except Exception as e:
-        return f"[Error] Loading Whisper model '{model_size}': {e}"
-    
-    try:
-        audio = AudioSegment.from_file(mp3_path)
-    except Exception as e:
-        return f"[Error] Reading MP3 file: {e}"
-    
-    total_ms = len(audio)
-    transcripts = []
-    start_time = time.time()
-    for start in range(0, total_ms, chunk_ms):
-        end = min(start + chunk_ms, total_ms)
-        chunk = audio[start:end]
-        tmp_chunk = os.path.join(tempfile.gettempdir(), f"chunk_{uuid.uuid4()}.mp3")
-        chunk.export(tmp_chunk, format="mp3")
-        try:
-            result = model.transcribe(tmp_chunk)
-            text = result.get("text", "")
-        except Exception as e:
-            text = f"[Error] Transcription: {e}"
-        finally:
-            if os.path.exists(tmp_chunk):
-                os.remove(tmp_chunk)
-        transcripts.append(f"[{start//1000}-{end//1000}s] {text}")
-    elapsed = time.time() - start_time
-    return f"Whisper Transcript (model={model_size}, time={elapsed:.1f}s):\n" + "\n".join(transcripts)
+        return f"[Audio Exception] {e}"
 
-def extract_frames_with_timestamps(local_mp4: str, desired_fps: int = 1) -> str:
-    """
-    Extract frame timestamps from the MP4.
-    For example, if the video is 30fps and desired_fps is 1, you'll get one timestamp per second.
-    """
-    cap = cv2.VideoCapture(local_mp4)
-    if not cap.isOpened():
-        return "[Error] Could not open MP4 for frame extraction."
-    orig_fps = cap.get(cv2.CAP_PROP_FPS)
-    if orig_fps <= 0:
-        orig_fps = 30.0
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    skip = int(round(orig_fps / desired_fps)) if desired_fps > 0 else 999999
-    lines = []
-    current_frame = 0
-    progress = tqdm(total=total_frames, desc="Extracting Frames", unit="frame", leave=False)
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-        if current_frame % skip == 0:
-            ts = current_frame / orig_fps
-            lines.append(f"Frame={current_frame}, time={ts:.2f}s")
-        current_frame += 1
-        progress.update(1)
-    progress.close()
-    cap.release()
-    return "\n".join(lines)
+# ------------------------------------------------------------------
+# RealTimeProcessor: Real-Time Screen & Audio Capture with Merged Timestamps
+# ------------------------------------------------------------------
+class RealTimeProcessor:
+    def __init__(self, prompt="Describe the screen and audio in real time",
+                 capture_interval=5.0, audio_chunk_duration=5.0, frame_skip=10):
+        self.prompt = prompt
+        self.capture_interval = capture_interval
+        self.audio_chunk_duration = audio_chunk_duration
+        self.frame_skip = frame_skip
 
-def remove_timestamps(text: str) -> str:
-    """Remove [start-end] markers from transcript lines."""
-    return re.sub(r'\[[^\]]+\]', '', text)
+        self.running = False
+        self._start_time = None
 
-def merge_summaries(vision_text: str, whisper_text: str, frames_info: str) -> str:
-    """Merge vision output with the Whisper transcript (without timestamps) for final merged output."""
-    clean_whisper = remove_timestamps(whisper_text).strip()
-    merged = vision_text.strip() + "\n\n" + clean_whisper
-    return merged
+        self.latest_frame = None
+        self._frame_lock = threading.Lock()
 
-def process_video_once(prompt: str, url_or_path: str, model_size: str, chunk_sec: int, fps: int):
-    """
-    Run the entire pipeline once.
-    If url_or_path starts with "http", it's treated as a URL; otherwise, as a local file.
-    Returns (vision_text, whisper_text, merged_output).
-    """
-    vision_text = call_qwen_vision(prompt, url_or_path)
-    if url_or_path.lower().startswith("http"):
-        local_mp4 = download_mp4(url_or_path)
-    else:
-        local_mp4 = url_or_path
-    mp3_file = extract_audio_to_mp3(local_mp4)
-    whisper_text = transcribe_mp3_whisper(mp3_file, model_size=model_size, chunk_ms=chunk_sec*1000)
-    if os.path.exists(mp3_file):
-        os.remove(mp3_file)
-    if fps > 0:
-        frames_info = extract_frames_with_timestamps(local_mp4, fps)
-    else:
-        frames_info = ""
-    if url_or_path.lower().startswith("http") and os.path.exists(local_mp4):
-        os.remove(local_mp4)
-    merged_output = merge_summaries(vision_text, whisper_text, frames_info)
-    return vision_text, whisper_text, merged_output
+        self.vision_events = []   # List of {"timestamp": float, "content": str}
+        self._vision_lock = threading.Lock()
 
-# Wrappers for different interfaces:
-def process_chat(prompt: str, url: str, modality: str, model_size: str, chunk_sec: int, fps: int):
-    if modality == "Text Only":
-        vision_text = prompt
-        whisper_text = ""
-        merged = prompt
-    elif modality == "Audio Only":
-        vision_text = "[N/A]"
-        vision_text, whisper_text, merged = process_video_once(prompt, url, model_size, chunk_sec, fps)
-    else:
-        vision_text, whisper_text, merged = process_video_once(prompt, url, model_size, chunk_sec, fps)
-    return vision_text, whisper_text, merged
+        self.audio_events = []    # List of {"timestamp": float, "content": str}
+        self._audio_lock = threading.Lock()
 
-def process_screen_capture(file, model_size: str, chunk_sec: int, fps: int):
-    if file is None:
-        return "Error: No file uploaded.", "", ""
-    return process_video_once("Summarize video", file.name, model_size, chunk_sec, fps)
+        self.timeline_merged = []  # Combined events
+        self._timeline_lock = threading.Lock()
 
-def process_webcam(video_file, model_size: str, chunk_sec: int, fps: int):
-    if video_file is None:
-        return "Error: No webcam video recorded.", "", ""
-    return process_video_once("Summarize video", video_file.name, model_size, chunk_sec, fps)
+        self.sct = mss.mss()
+        self.audio_q = queue.Queue()
 
-# For command-line testing:
-if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser(description="Video Captioning via Qwen2.5-VL HPC and Whisper")
-    parser.add_argument("--prompt", required=True, help="Prompt text (e.g., 'Summarize video')")
-    parser.add_argument("--url", required=True, help="Remote MP4 URL or local file path")
-    parser.add_argument("--whisper_model", default="small", help="Whisper model size (tiny, base, small, medium, large)")
-    parser.add_argument("--chunk_sec", type=int, default=60, help="Audio chunk length in seconds")
-    parser.add_argument("--fps", type=int, default=1, help="Frame extraction rate (FPS; 0 to skip)")
-    args = parser.parse_args()
-    
-    vision, whisper_transcript, merged = process_video_once(
-        prompt=args.prompt,
-        url_or_path=args.url,
-        model_size=args.whisper_model,
-        chunk_sec=args.chunk_sec,
-        fps=args.fps
-    )
-    print("\n=== Vision Output ===\n")
-    print(vision)
-    print("\n=== Whisper Transcript ===\n")
-    print(whisper_transcript)
-    print("\n=== Merged Output ===\n")
-    print(merged)
+        # Audio configuration
+        self.rate = 16000
+        self.channels = 1
+        self.format = pyaudio.paInt16
+        self.chunk = 1024
+
+        self.screen_thread = None
+        self.audio_thread = None
+        self.proc_thread = None
+
+    def start(self):
+        self.running = True
+        self._start_time = time.time()
+        self.screen_thread = threading.Thread(target=self._capture_screen, daemon=True)
+        self.audio_thread = threading.Thread(target=self._capture_audio, daemon=True)
+        self.proc_thread = threading.Thread(target=self._process_loop, daemon=True)
+        self.screen_thread.start()
+        self.audio_thread.start()
+        self.proc_thread.start()
+
+    def stop(self):
+        self.running = False
+
+    def _capture_screen(self):
+        monitor = self.sct.monitors[1]
+        skip_counter = 0
+        while self.running:
+            img = np.array(self.sct.grab(monitor))
+            frame = cv2.cvtColor(img, cv2.COLOR_BG2RGB)
+            skip_counter += 1
+            if skip_counter >= self.frame_skip:
+                skip_counter = 0
+                with self._frame_lock:
+                    self.latest_frame = frame
+            time.sleep(0.04)
+
+    def _capture_audio(self):
+        p = pyaudio.PyAudio()
+        stream = p.open(format=self.format,
+                        channels=self.channels,
+                        rate=self.rate,
+                        input=True,
+                        frames_per_buffer=self.chunk)
+        frames = []
+        chunk_count = int((self.rate / self.chunk) * self.audio_chunk_duration)
+        while self.running:
+            data = stream.read(self.chunk)
+            frames.append(data)
+            if len(frames) >= chunk_count:
+                wav_path = os.path.join(tempfile.gettempdir(), f"live_{uuid.uuid4()}.wav")
+                wf = wave.open(wav_path, 'wb')
+                wf.setnchannels(self.channels)
+                wf.setsampwidth(p.get_sample_size(self.format))
+                wf.setframerate(self.rate)
+                wf.writeframes(b''.join(frames))
+                wf.close()
+                self.audio_q.put(wav_path)
+                frames = []
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+
+    def _process_loop(self):
+        last_vision_time = 0.0
+        while self.running:
+            now = time.time()
+            elapsed = now - self._start_time
+
+            # Vision processing
+            if (now - last_vision_time) >= self.capture_interval:
+                last_vision_time = now
+                with self._frame_lock:
+                    frame_copy = self.latest_frame.copy() if self.latest_frame is not None else None
+                if frame_copy is not None:
+                    png_path = os.path.join(tempfile.gettempdir(), f"frame_{uuid.uuid4()}.png")
+                    cv2.imwrite(png_path, cv2.cvtColor(frame_copy, cv2.COLOR_RGB2BGR))
+                    vision_text = call_qwen_vision(self.prompt, png_path)
+                    if os.path.exists(png_path):
+                        os.remove(png_path)
+                    with self._vision_lock:
+                        self.vision_events.append({"timestamp": elapsed, "content": vision_text})
+                    with self._timeline_lock:
+                        self.timeline_merged.append({"timestamp": elapsed, "type": "VISION", "content": vision_text})
+
+            # Audio processing
+            try:
+                wav_file = self.audio_q.get_nowait()
+            except queue.Empty:
+                wav_file = None
+            if wav_file:
+                mp3_path = os.path.join(tempfile.gettempdir(), f"live_{uuid.uuid4()}.mp3")
+                try:
+                    clip = VideoFileClip(wav_file)
+                    clip.audio.write_audiofile(mp3_path, fps=16000, logger=None)
+                    clip.close()
+                except Exception:
+                    mp3_path = wav_file
+                audio_text = transcribe_mp3_qwen(mp3_path, self.prompt)
+                if os.path.exists(wav_file) and wav_file != mp3_path:
+                    os.remove(wav_file)
+                if os.path.exists(mp3_path) and mp3_path != wav_file:
+                    os.remove(mp3_path)
+                now2 = time.time()
+                elapsed2 = now2 - self._start_time
+                with self._audio_lock:
+                    self.audio_events.append({"timestamp": elapsed2, "content": audio_text})
+                with self._timeline_lock:
+                    self.timeline_merged.append({"timestamp": elapsed2, "type": "AUDIO", "content": audio_text})
+            time.sleep(0.2)
+
+    def get_latest_overlay(self):
+        with self._frame_lock:
+            frame = self.latest_frame.copy() if self.latest_frame is not None else None
+        if frame is None:
+            return None, "", ""
+        with self._vision_lock:
+            last_vis = self.vision_events[-1]["content"] if self.vision_events else ""
+        with self._audio_lock:
+            last_aud = self.audio_events[-1]["content"] if self.audio_events else ""
+        overlay_frame = frame.copy()
+        overlay_lines = []
+        if last_vis.strip():
+            overlay_lines.append(f"VISION: {last_vis.strip()}")
+        if last_aud.strip():
+            overlay_lines.append(f"AUDIO: {last_aud.strip()}")
+        overlay_text = "\n".join(overlay_lines)
+        y0, dy = 30, 25
+        for i, line in enumerate(overlay_text.split("\n")):
+            y = y0 + i * dy
+            cv2.putText(overlay_frame, line, (10, y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2, cv2.LINE_AA)
+        return overlay_frame, last_aud, last_vis
+
+    def get_merged_data(self):
+        with self._timeline_lock:
+            merged_sorted = sorted(self.timeline_merged, key=lambda ev: ev["timestamp"])
+            lines = []
+            for ev in merged_sorted:
+                lines.append(f"[time={ev['timestamp']:.1f}s] ({ev['type']}) {ev['content'].replace(chr(10), ' ')}")
+            return "\n".join(lines)
 
